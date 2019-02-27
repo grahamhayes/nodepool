@@ -60,7 +60,7 @@ class ProviderManager(object):
                 ProviderManager.log.debug("Creating new ProviderManager object"
                                           " for %s" % p.name)
                 new_config.provider_managers[p.name] = get_provider(p)
-                new_config.provider_managers[p.name].start(zk_conn)
+                new_config.provider_managers[p.name].start()
 
         for stop_manager in stop_managers:
             stop_manager.stop()

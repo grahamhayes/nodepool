@@ -39,6 +39,9 @@ class AzurePool(ConfigPool):
     def __repr__(self):
         return "<AzurePool %s>" % self.name
 
+    def load(self, pool_config):
+        pass
+
 
 class AzureProviderConfig(ProviderConfig):
     def __init__(self, driver, provider):
@@ -54,7 +57,7 @@ class AzureProviderConfig(ProviderConfig):
 
     @property
     def pools(self):
-        return self.__pools
+        return self._pools
 
     @property
     def manage_images(self):

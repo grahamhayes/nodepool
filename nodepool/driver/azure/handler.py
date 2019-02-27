@@ -23,16 +23,17 @@ from nodepool import nodeutils as utils
 
 
 class AzureInstanceLauncher(NodeLauncher):
-    def __init__(self, handler, node, label, retries=3, boot_timeout=120):
-        super().__init__(handler, node)
+    def __init__(self, handler, node, provider_config, label, retries=3, boot_timeout=120):
+        super().__init__(handler, node, provider_config)
         self.retries = retries
+        self.handler = handler
         self.label = label
         self.boot_timeout = boot_timeout
 
     def launch(self):
         self.log.debug("Starting %s instance" % self.node.type)
         attempts = 1
-        hostname = "%s-%s" % (self.label, self.node.id)
+        hostname = "%s-%s" % ("self-label", self.node.id)
         while attempts <= self.retries:
             try:
                 instance = self.handler.manager.createInstance(
@@ -49,11 +50,10 @@ class AzureInstanceLauncher(NodeLauncher):
             time.sleep(1)
 
         self.node.external_id = instance.id
-        self.storeNode()
 
         boot_start = time.monotonic()
         while time.monotonic() - boot_start < self.boot_timeout:
-            state = instance.properties.provisioningState
+            state = instance.provisioning_state
             self.log.debug("Instance %s is %s" % (instance.id, state))
             if state == 'Succeeded':
                 break
@@ -84,7 +84,6 @@ class AzureInstanceLauncher(NodeLauncher):
         self.node.connection_port = 22
         self.node.connection_type = "ssh"
         self.node.username = self.label.username
-        self.storeNode()
         self.log.info("Instance %s is ready", instance.id)
 
 
@@ -129,6 +128,9 @@ class AzureNodeRequestHandler(NodeRequestHandler):
 
     def launch(self, node):
         label = self.pool.labels[node.type[0]]
-        thd = AzureInstanceLauncher(self, node, label)
+        thd = AzureInstanceLauncher(self, node, self.provider, label)
         thd.start()
         self._threads.append(thd)
+
+    def imagesAvailable(self):
+        return True

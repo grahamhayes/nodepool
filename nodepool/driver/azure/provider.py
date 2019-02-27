@@ -13,10 +13,14 @@
 # under the License.
 
 import logging
+import os
 
 from azure.common.client_factory import get_client_from_auth_file
-from azure.mgmt.compute import ComputeManagementClient
+from azure.common.credentials import ServicePrincipalCredentials
+from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.network import NetworkManagementClient
+from azure.mgmt.compute import ComputeManagementClient
+
 
 from nodepool.driver import Provider
 
@@ -31,16 +35,25 @@ class AzureProvider(Provider):
         self.zuul_public_key = provider.zuul_public_key
         self.compute_client = None
         self.network_client = None
-        self.resource_group = "nodepool-test-instances"
+        self.resource_client = None
+        self.resource_group = "ZuulCIDev"
 
     def start(self):
         self.log.debug("Starting")
-        if self.client is None:
+        auth_file_path = os.getenv('AZURE_AUTH_LOCATION', None)
+        if auth_file_path is not None:
+            self.log.debug("Authenticating with Azure using credentials in file at {0}"
+                  .format(auth_file_path))
+        if self.compute_client is None:
             # Set credencials.json path in AZURE_AUTH_LOCATION
             self.compute_client = get_client_from_auth_file(
                 ComputeManagementClient)
+        if self.network_client is None:
             self.network_client = get_client_from_auth_file(
                 NetworkManagementClient)
+        if self.resource_client is None:
+            self.resource_client = get_client_from_auth_file(
+                ResourceManagementClient)
 
     def stop(self):
         self.log.debug("Stopping")
@@ -63,8 +76,6 @@ class AzureProvider(Provider):
         pass
 
     def cleanupNode(self, server_id):
-        if self.client is None:
-            return False
         vm_deletion = self.compute_client.virtual_machines.delete(
             self.resource_group, server_id)
         vm_deletion.wait()
@@ -79,16 +90,39 @@ class AzureProvider(Provider):
             self.resource_group, server_id, expand='instanceView')
 
     def createInstance(self, hostname, label, nodepool_id):
-        self.client.resource_groups.create_or_update(
+        self.log.debug("Create resouce group")
+        self.resource_client.resource_groups.create_or_update(
             self.resource_group, {'location': self.provider.location})
 
+
+        params_create = {
+            'location': self.provider.location,
+            'public_ip_allocation_method': 'dynamic',
+        }
+        pip_poller = self.network_client.public_ip_addresses.create_or_update(
+            self.resource_group,
+            "%s-nic-pip" % hostname,
+            params_create,
+        )
+        public_ip = pip_poller.result()
+
         nic_creation = self.network_client.network_interfaces.create_or_update(
-            self.resource_group, "%s-nic" % hostname, {
+            self.resource_group,
+            "%s-nic" % hostname,
+            {
                 'location': self.provider.location,
                 'ip_configurations': [{
-                    'subnet': {self.provider.subnet_id}
+                    'name': "azure-sample-ip-config",
+                    'subnet': {
+                        'id': self.provider.subnet_id
+                    },
+                    'public_ip_address': {
+                        'id': public_ip.id
+                    }
                 }]
-            })
+            }
+        )
+
         nic_creation.wait()
         nic = nic_creation.result()
 
